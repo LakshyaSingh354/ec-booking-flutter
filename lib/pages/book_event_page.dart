@@ -44,8 +44,11 @@ class _BookEventPageState extends State<BookEventPage> {
 
   Future<void> fetchEventAndConsultant() async {
     try {
+      final temp = await http.get(
+          Uri.parse("https://ec-booking-pink.vercel.app/consultants")
+      );
       final eventResponse = await http.get(
-          Uri.parse("http://10.12.31.122:3000/api/events/${widget.eventId}"));
+          Uri.parse("https://ec-booking-pink.vercel.app/api/events/${widget.eventId}"));
       if (eventResponse.statusCode == 200) {
         setState(() {
           event = jsonDecode(eventResponse.body);
@@ -54,7 +57,7 @@ class _BookEventPageState extends State<BookEventPage> {
 
       if (widget.consultantId != null) {
         final consultantResponse = await http.get(Uri.parse(
-            "http://10.12.31.122:3000/api/consultants/${widget.consultantId}"));
+            "https://ec-booking-pink.vercel.app/api/consultants/${widget.consultantId}"));
         if (consultantResponse.statusCode == 200) {
           setState(() {
             consultant = jsonDecode(consultantResponse.body);
@@ -80,7 +83,7 @@ class _BookEventPageState extends State<BookEventPage> {
 
     try {
       final res = await http.post(
-        Uri.parse("http://10.12.31.122:3000/api/payment/createOrder"),
+        Uri.parse("https://ec-booking-pink.vercel.app/api/payment/createOrder"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "event": widget.eventId,
@@ -153,7 +156,7 @@ class _BookEventPageState extends State<BookEventPage> {
     try {
       final firebasetoken = await getToken();
       final response = await http.post(
-        Uri.parse("http://10.12.31.122:3000/api/bookings"),
+        Uri.parse("https://ec-booking-pink.vercel.app/api/bookings"),
         headers: {
           "Content-Type": "application/json",
           "Authorization": "Bearer $firebasetoken"

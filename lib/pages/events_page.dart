@@ -27,7 +27,7 @@ class _EventsPageState extends State<EventsPage> {
   Future<void> fetchEvents() async {
     try {
       final response =
-          await http.get(Uri.parse("http://10.12.31.122:3000/api/events"));
+          await http.get(Uri.parse("https://ec-booking-pink.vercel.app/api/events"));
       if (response.statusCode == 200) {
         setState(() {
           events = jsonDecode(response.body);

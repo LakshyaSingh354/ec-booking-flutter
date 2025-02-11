@@ -50,7 +50,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> sendUserToBackend(User user, String? firebaseToken) async {
     final response = await http.post(
-      Uri.parse("http://10.12.31.122:3000/api/firebase-auth"),
+      Uri.parse("https://ec-booking-pink.vercel.app/api/firebase-auth"),
       headers: {
         "Authorization": "Bearer $firebaseToken",
         "Content-Type": "application/json",

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:http/http.dart' as http;
 
@@ -28,6 +29,7 @@ class _BookEventPageState extends State<BookEventPage> {
   void initState() {
     super.initState();
     fetchEventAndConsultant();
+    fetchBookedSlots(); // Fetch booked slots when page loads
 
     // Initialize Razorpay
     _razorpay = Razorpay();
@@ -42,13 +44,35 @@ class _BookEventPageState extends State<BookEventPage> {
     super.dispose();
   }
 
+  List<Map<String, dynamic>> bookedSlots = [];
+
+  Future<void> fetchBookedSlots() async {
+    try {
+      final response = await http.get(Uri.parse(
+          "https://ec-booking-pink.vercel.app/api/bookings/${widget.consultantId}"));
+      if (response.statusCode == 200) {
+        List<dynamic> bookings = jsonDecode(response.body);
+
+        setState(() {
+          bookedSlots = bookings.map((b) {
+            return {
+              "startTime": DateTime.parse(b['startTime'])
+                  .toLocal(), // Convert UTC to local
+              "endTime": DateTime.parse(b['endTime'])
+                  .toLocal(), // Convert UTC to local
+            };
+          }).toList();
+        });
+      }
+    } catch (e) {
+      print("Error fetching booked slots: $e");
+    }
+  }
+
   Future<void> fetchEventAndConsultant() async {
     try {
-      final temp = await http.get(
-          Uri.parse("https://ec-booking-pink.vercel.app/consultants")
-      );
-      final eventResponse = await http.get(
-          Uri.parse("https://ec-booking-pink.vercel.app/api/events/${widget.eventId}"));
+      final eventResponse = await http.get(Uri.parse(
+          "https://ec-booking-pink.vercel.app/api/events/${widget.eventId}"));
       if (eventResponse.statusCode == 200) {
         setState(() {
           event = jsonDecode(eventResponse.body);
@@ -72,6 +96,123 @@ class _BookEventPageState extends State<BookEventPage> {
     }
   }
 
+  List<Map<String, dynamic>> generateSlots() {
+    if (event == null || event!['duration'] == null) return [];
+
+    int duration = event!['duration'];
+    List<Map<String, dynamic>> slots = [];
+    DateTime now = DateTime.now();
+
+    for (int i = 0; i < 7; i++) {
+      DateTime date = now.add(Duration(days: i));
+      List<Map<String, String>> dailySlots = [];
+
+      for (DateTime slotTime = DateTime(date.year, date.month, date.day, 9, 0);
+          slotTime.hour < 17;
+          slotTime = slotTime.add(Duration(minutes: duration))) {
+        if (slotTime.isBefore(now)) continue;
+
+        DateTime endTime = slotTime.add(Duration(minutes: duration));
+        if (endTime.hour > 17) break;
+
+        // Convert slot time to local before comparison
+        DateTime localSlotTime = slotTime.toLocal();
+        DateTime localEndTime = endTime.toLocal();
+
+        // Check if the slot falls within any booked range
+        bool isBooked = bookedSlots.any((b) {
+          DateTime bookedStart = b['startTime'].toLocal();
+          DateTime bookedEnd = b['endTime'].toLocal();
+          return (localSlotTime.isAfter(bookedStart) ||
+                  localSlotTime.isAtSameMomentAs(bookedStart)) &&
+              (localSlotTime.isBefore(bookedEnd));
+        });
+
+        dailySlots.add({
+          "slotTime": slotTime.toIso8601String(),
+          "slotString":
+              "${localSlotTime.hour.toString().padLeft(2, '0')}:${localSlotTime.minute.toString().padLeft(2, '0')} - "
+                  "${localEndTime.hour.toString().padLeft(2, '0')}:${localEndTime.minute.toString().padLeft(2, '0')}",
+          "isBooked": isBooked.toString()
+        });
+      }
+
+      slots.add({"date": date, "slots": dailySlots});
+    }
+
+    return slots;
+  }
+
+  void _showSlotSelectionDialog() {
+    List<Map<String, dynamic>> slotsByDate = generateSlots();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Select a Time Slot"),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                children: slotsByDate.map((daySlots) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        DateFormat("dd-MM-yyyy")
+                            .format(daySlots['date'].toLocal()),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 10),
+                      (daySlots['slots'] as List).isEmpty
+                          ? const Text("No slots available")
+                          : Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: (daySlots['slots']
+                                      as List<Map<String, dynamic>>)
+                                  .map((slot) {
+                                DateTime slotTime =
+                                    DateTime.parse(slot['slotTime']!);
+                                String isBooked = slot['isBooked'];
+
+                                return ElevatedButton(
+                                  onPressed: isBooked == "true"
+                                      ? null
+                                      : () {
+                                          setState(() {
+                                            selectedTime = slotTime;
+                                          });
+                                          Navigator.pop(context);
+                                        },
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 10, horizontal: 15),
+                                    backgroundColor: isBooked == "true"
+                                        ? Colors.grey
+                                        : Color.fromARGB(255, 15, 168, 244),
+                                  ),
+                                  child: Text(slot['slotString']!,
+                                      style: TextStyle(
+                                          color: isBooked == "true"
+                                              ? Colors.black54
+                                              : Colors.white)),
+                                );
+                              }).toList(),
+                            ),
+                      const Divider(),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _handlePayment() async {
     if (guestName.isEmpty || guestEmail.isEmpty || selectedTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -87,7 +228,7 @@ class _BookEventPageState extends State<BookEventPage> {
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "event": widget.eventId,
-          "amount": event?["price"] ?? 0, // Ensure event price is correct
+          "amount": event?["price"] ?? 0,
         }),
       );
 
@@ -138,82 +279,57 @@ class _BookEventPageState extends State<BookEventPage> {
   }
 
   Future<void> _confirmBooking(String paymentId) async {
-    final startTime = selectedTime!.toIso8601String();
-    final endTime = DateTime.parse(startTime)
-        .add(Duration(minutes: event?['duration']))
-        .toIso8601String();
+  final startTime = selectedTime!.toUtc().toIso8601String(); // Convert to UTC
+  final endTime = DateTime.parse(startTime)
+      .add(Duration(minutes: event?['duration']))
+      .toUtc()
+      .toIso8601String(); // Convert to UTC
 
-    final bookingData = {
-      "event": widget.eventId,
-      "consultant": widget.consultantId,
-      "guestName": guestName,
-      "guestEmail": guestEmail,
-      "startTime": startTime,
-      "endTime": endTime,
-      "paymentId": paymentId, // Attach the payment ID
-    };
+  final bookingData = {
+    "event": widget.eventId,
+    "consultant": widget.consultantId,
+    "guestName": guestName,
+    "guestEmail": guestEmail,
+    "startTime": startTime,
+    "endTime": endTime,
+    "paymentId": paymentId,
+  };
 
-    try {
-      final firebasetoken = await getToken();
-      final response = await http.post(
-        Uri.parse("https://ec-booking-pink.vercel.app/api/bookings"),
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $firebasetoken"
-        },
-        body: jsonEncode(bookingData),
-      );
-
-      if (response.statusCode == 201) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text("Booking Confirmed!")));
-        Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content:
-                Text("Booking failed: ${jsonDecode(response.body)['error']}")));
-      }
-    } catch (e) {
-      print("Error booking event: $e");
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("An error occurred")));
-    } finally {
-      setState(() => isBooking = false);
-    }
-  }
-
-  Future<void> _selectDateTime() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
+  try {
+    final firebasetoken = await getToken();
+    final response = await http.post(
+      Uri.parse("https://ec-booking-pink.vercel.app/api/bookings"),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer $firebasetoken"
+      },
+      body: jsonEncode(bookingData),
     );
 
-    if (picked != null) {
-      final TimeOfDay? timePicked = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.now(),
-      );
-
-      if (timePicked != null) {
-        setState(() {
-          selectedTime = DateTime(
-            picked.year,
-            picked.month,
-            picked.day,
-            timePicked.hour,
-            timePicked.minute,
-          );
-        });
-      }
+    if (response.statusCode == 201) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Booking Confirmed!")));
+      Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:
+              Text("Booking failed: ${jsonDecode(response.body)['error']}")));
     }
+  } catch (e) {
+    print("Error booking event: $e");
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text("An error occurred")));
+  } finally {
+    setState(() => isBooking = false);
   }
+}
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Book Event"), backgroundColor: Colors.blue,),
+      appBar:
+          AppBar(title: const Text("Book Event"), backgroundColor: Colors.blue),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : event == null
@@ -231,26 +347,30 @@ class _BookEventPageState extends State<BookEventPage> {
                           ? "Price: ₹${event?['price']}"
                           : "Free Event"),
                       TextField(
-                        decoration: const InputDecoration(labelText: "Your Name"),
+                        decoration:
+                            const InputDecoration(labelText: "Your Name"),
                         onChanged: (value) => setState(() => guestName = value),
                       ),
                       TextField(
-                        decoration: const InputDecoration(labelText: "Your Email"),
+                        decoration:
+                            const InputDecoration(labelText: "Your Email"),
                         keyboardType: TextInputType.emailAddress,
-                        onChanged: (value) => setState(() => guestEmail = value),
+                        onChanged: (value) =>
+                            setState(() => guestEmail = value),
                       ),
                       const SizedBox(height: 20),
                       ElevatedButton(
-                        onPressed: _selectDateTime,
+                        onPressed: _showSlotSelectionDialog,
                         child: Text(selectedTime == null
-                            ? "Pick a date & time"
-                            : selectedTime!.toLocal().toString()),
+                            ? "Select Time Slot"
+                            : "${selectedTime!.hour}:${selectedTime!.minute.toString().padRight(2, '0')} on ${selectedTime!.day}-${selectedTime!.month}-${selectedTime!.year}"),
                       ),
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: isBooking ? null : _handlePayment,
                         child: isBooking
-                            ? const CircularProgressIndicator(color: Colors.white)
+                            ? const CircularProgressIndicator(
+                                color: Colors.white)
                             : const Text("Pay & Confirm Booking"),
                       ),
                     ],

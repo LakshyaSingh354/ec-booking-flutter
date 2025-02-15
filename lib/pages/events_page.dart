@@ -23,11 +23,30 @@ class _EventsPageState extends State<EventsPage> {
     super.initState();
     fetchEvents();
   }
-
+  Future<http.Response> fetchWithRetry(String url, {int retries = 5}) async {
+    for (int i = 0; i < retries; i++) {
+      try {
+        await http.get(
+          Uri.parse("https://ec-booking-pink.vercel.app/api/user")
+      );
+      await http.get(
+          Uri.parse("https://ec-booking-pink.vercel.app/api/consultants")
+      );
+        final response = await http.get(Uri.parse(url));
+        if (response.statusCode == 500) {
+          print("Retrying due to 500 error: Attempt ${i + 1}");
+          continue;
+        }
+        return response; // Success, return response
+      } catch (e) {
+        print("Network error: $e");
+      }
+    }
+    throw Exception("Failed to fetch $url after $retries retries.");
+  }
   Future<void> fetchEvents() async {
     try {
-      final response =
-          await http.get(Uri.parse("https://ec-booking-pink.vercel.app/api/events"));
+      final response = await fetchWithRetry("https://ec-booking-pink.vercel.app/api/events");
       if (response.statusCode == 200) {
         setState(() {
           events = jsonDecode(response.body);
@@ -116,8 +135,8 @@ class _EventsPageState extends State<EventsPage> {
                                                             ""
                                                         ? const NetworkImage(
                                                             "https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png")
-                                                        : AssetImage(
-                                                                "lib/images${consultant['avatar']}")
+                                                        : NetworkImage(
+                                                                consultant['avatar'])
                                                             as ImageProvider,
                                                     radius: 24,
                                                   ),

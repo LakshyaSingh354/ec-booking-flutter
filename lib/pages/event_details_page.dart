@@ -31,7 +31,7 @@ class EventDetailsPage extends StatelessWidget {
                     leading: CircleAvatar(
                       backgroundImage: consultant['avatar'] == ""
                           ? const NetworkImage("https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png")
-                          : AssetImage("lib/images${consultant['avatar']}") as ImageProvider,
+                          : NetworkImage("${consultant['avatar']}") as ImageProvider,
                     ),
                     title: Text(consultant['name']),
                     trailing: ElevatedButton(
@@ -50,32 +50,7 @@ class EventDetailsPage extends StatelessWidget {
             ),
 
             const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Text("Not Sure? Book without a consultant and we'll assign one for you.", style: const TextStyle(fontSize: 20)),
-            ),
-            const SizedBox(height: 10),
-            // Button to book without a consultant
-            Center(
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pushNamed(
-                    context,
-                    "/book_event",
-                    arguments: {"eventId": event['_id'].toString()}, // No consultantId provided
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green, // Custom color
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                child: const Text("Book Without a Consultant", style: TextStyle(color: Colors.white),),
-              ),
-            ),
-          ],
-        ),
-      ),
+          ]))
     );
   }
 }
